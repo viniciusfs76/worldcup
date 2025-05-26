@@ -734,7 +734,10 @@ players <- squads |>
   group_by(player_id, family_name, given_name, player_wikipedia_link) |>
   summarize(
     position_name = str_c(unique(position_name), collapse = ", "),
-    birth_date = str_c(unique(birth_date), collapse = ", "),
+    # Take the first birth_date if multiple happen to exist for a player_id.
+    # The expectation is one birth_date per player_id from the upstream data (wikipedia_squads.RData),
+    # but this makes the aggregation more robust to prevent concatenation of multiple unique dates.
+    birth_date = dplyr::first(birth_date),
     list_tournaments = str_c(year, collapse = ", ")
   ) |>
   ungroup() |>
@@ -781,6 +784,57 @@ players <- players |>
     count_tournaments, list_tournaments,
     player_wikipedia_link
   )
+
+# --- Start Test/Demonstration of robust birth_date handling ---
+if (FALSE) { # Set to TRUE to run this test block manually if needed
+  print("Testing robust birth_date handling logic...")
+  
+  # Create sample data simulating a player_id with multiple birth dates
+  # and another with a single birth date.
+  # Note: 'squads' would need to be the data before this 'players' aggregation step.
+  # This is a conceptual test as 'squads' is modified.
+  # For a real test, we'd use a snapshot of 'squads' or a mock.
+  
+  mock_squads_for_birth_date_test <- tibble::tribble(
+    ~player_id, ~family_name, ~given_name, ~player_wikipedia_link, ~birth_date, ~year,
+    "P-TEST01", "Test", "PlayerA", "link1", "1990-01-01", "2010",
+    "P-TEST01", "Test", "PlayerA", "link1", "1990-01-02", "2014", # Second, different birth date
+    "P-TEST01", "Test", "PlayerA", "link1", "1990-01-01", "2018", # Repeated first birth date
+    "P-TEST02", "Test", "PlayerB", "link2", "1992-02-02", "2010",
+    "P-TEST03", "Test", "PlayerC", "link3", "not available", "2010",
+    "P-TEST03", "Test", "PlayerC", "link3", "1993-03-03", "2014" # NA followed by a real date
+  )
+  
+  test_players_aggregation <- mock_squads_for_birth_date_test |>
+    dplyr::group_by(player_id, family_name, given_name, player_wikipedia_link) |>
+    dplyr::summarize(
+      position_name = dplyr::first("test_pos"), # Dummy value for this test
+      # Applying the same robust logic:
+      birth_date = dplyr::first(birth_date), 
+      list_tournaments = stringr::str_c(year, collapse = ", "),
+      .groups = "drop" 
+    )
+  
+  print("Aggregated test data:")
+  print(test_players_aggregation)
+  
+  # Expected outcomes:
+  # P-TEST01 should have birth_date "1990-01-01" (the first one encountered)
+  # P-TEST02 should have birth_date "1992-02-02"
+  # P-TEST03 should have birth_date "not available" (the first one encountered)
+
+  if(test_players_aggregation$birth_date[test_players_aggregation$player_id == 'P-TEST01'] == '1990-01-01') {
+    print("P-TEST01 handled correctly.")
+  } else {
+    print("P-TEST01 FAILED.")
+  }
+  if(test_players_aggregation$birth_date[test_players_aggregation$player_id == 'P-TEST03'] == 'not available') {
+    print("P-TEST03 handled correctly.")
+  } else {
+    print("P-TEST03 FAILED.")
+  }
+}
+# --- End Test/Demonstration block ---
 
 ## Player appearances ----------------------------------------------------------
 
